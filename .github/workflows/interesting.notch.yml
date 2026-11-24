@@ -2,7 +2,7 @@ name: Build interesting.notch
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/notch-build/*']
   workflow_dispatch:
 
 permissions:
@@ -12,6 +12,7 @@ jobs:
   macos:
     if: github.repository_id == '1449258753'
     runs-on: macos-26
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -26,6 +27,14 @@ jobs:
             .github/scripts/tests/NotchAttachmentsSmoke.swift \
             -o "$RUNNER_TEMP/notch-attachments-smoke"
           "$RUNNER_TEMP/notch-attachments-smoke"
+
+      - name: Test left-side music hover routing
+        run: |
+          swiftc \
+            boringNotch/models/NotchHoverAction.swift \
+            .github/scripts/tests/NotchHoverSmoke.swift \
+            -o "$RUNNER_TEMP/notch-hover-smoke"
+          "$RUNNER_TEMP/notch-hover-smoke"
 
       - name: Build the development app
         run: |
