@@ -26,6 +26,7 @@ struct ContentView: View {
     @ObservedObject var volumeManager = VolumeManager.shared
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
+    @State private var isHoveringMusicThumbnail = false
     @State private var anyDropDebounceTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
@@ -419,6 +420,14 @@ struct ContentView: View {
                     width: max(0, vm.effectiveClosedNotchHeight - 12),
                     height: max(0, vm.effectiveClosedNotchHeight - 12)
                 )
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    isHoveringMusicThumbnail = hovering
+                    if hovering && shouldOpenMusicFromHover {
+                        scheduleHoverOpen()
+                    }
+                }
+                .onDisappear { isHoveringMusicThumbnail = false }
 
             Rectangle()
                 .fill(.black)
@@ -520,13 +529,36 @@ struct ContentView: View {
         return notchChats && !vm.isScreenLocked ? DragDetector.fileTypes : []
     }
 
-    private func doOpen() {
+    private func doOpen(on tab: NotchViews? = nil) {
         withAnimation(animationSpring) {
+            if let tab {
+                coordinator.currentView = tab
+            }
             vm.open()
         }
     }
 
     // MARK: - Hover Management
+
+    private var shouldOpenMusicFromHover: Bool {
+        isHoveringMusicThumbnail && musicManager.isPlaying
+    }
+
+    private var canOpenFromHover: Bool {
+        isHovering && vm.notchState == .closed && Defaults[.openNotchOnHover]
+            && (!coordinator.sneakPeek.show || (coordinator.sneakPeek.type == .music && shouldOpenMusicFromHover))
+    }
+
+    private func scheduleHoverOpen() {
+        guard canOpenFromHover else { return }
+        hoverTask?.cancel()
+        hoverTask = Task {
+            try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
+            guard !Task.isCancelled, canOpenFromHover else { return }
+
+            doOpen(on: shouldOpenMusicFromHover ? .home : nil)
+        }
+    }
 
     private func handleHover(_ hovering: Bool) {
         if coordinator.firstLaunch { return }
@@ -541,22 +573,7 @@ struct ContentView: View {
                 haptics.toggle()
             }
             
-            guard vm.notchState == .closed,
-                  !coordinator.sneakPeek.show,
-                  Defaults[.openNotchOnHover] else { return }
-            
-            hoverTask = Task {
-                try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
-                guard !Task.isCancelled else { return }
-                
-                await MainActor.run {
-                    guard self.vm.notchState == .closed,
-                          self.isHovering,
-                          !self.coordinator.sneakPeek.show else { return }
-                    
-                    self.doOpen()
-                }
-            }
+            scheduleHoverOpen()
         } else {
             hoverTask = Task {
                 try? await Task.sleep(for: .milliseconds(100))
